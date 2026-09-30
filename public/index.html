@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Морской бой</title>
+<link rel="stylesheet" href="styles.css">
+<script src="/socket.io/socket.io.js"></script>
+<script src="app.js" defer></script>
+</head>
+<body>
+<main id="view"></main>
+<button id="nbtn" data-a="about" aria-label="О проекте">N</button>
+<div id="about" class="modal" hidden data-a="closeabout">
+ <div class="box">
+  <div class="abh"><span class="nlogo">N</span><div><h2>О проекте и защита</h2><div class="mut">Narxoz Incubator 2026 · задание «Морской бой»</div></div></div>
+
+  <h3>1. Полноценный игровой цикл</h3>
+  <p>От расстановки флота перетаскиванием до победителя: проверка касаний кораблей, запрет повторных выстрелов, потопление с обводкой, статистика.</p>
+<pre><code>shoot(b,i){ if(b.shots[i]) return null;      // повторный выстрел запрещён
+  const s=b.ships.find(s=&gt;s.includes(i));
+  if(!s){ b.shots[i]=1; return {r:"miss"} }
+  b.shots[i]=2;
+  if(G.sunk(b,s)){ G.halo(b,s); return {r:"sunk",ship:s} }
+  return {r:"hit"} }
+
+fits(b,cs){ if(cs.some(([r,c])=&gt;r&gt;9||c&gt;9)) return false;   // за границей поля
+  const o=new Set(b.ships.flat());
+  return cs.every(([r,c])=&gt;[r*10+c,...G.nb(r*10+c)].every(j=&gt;!o.has(j))) } // без касаний</code></pre>
+
+  <h3>2. Вероятностный ИИ (Probability Density)</h3>
+  <p>На сложном уровне строится матрица весов: перебираются все допустимые положения оставшихся кораблей, клетки рядом с попаданием получают больший вес. ИИ стреляет в клетку с максимальным весом.</p>
+<pre><code>for(const n of G.rem(b))                        // оставшиеся корабли
+ for(let i=0;i&lt;100;i++) for(const h of [true,false]){   // все позиции, оба направления
+  const ids=...cellsOf(i,n,h);
+  if(ids.some(j=&gt;промах||потоплен)) continue;   // вариант невозможен
+  const k=ids.filter(j=&gt;b.shots[j]==2).length;  // попадания внутри варианта
+  ids.forEach(j=&gt;{ if(!b.shots[j]) w[j]+=1+k*25 }) }
+// ai(): const mx=Math.max(...free.map(i=&gt;w[i])); return rnd(free.filter(i=&gt;w[i]==mx))</code></pre>
+
+  <h3>3. ИИ-Тренер</h3>
+  <p>После партии каждый ваш выстрел сравнивается с лучшей клеткой на тот момент. Получаются точность, тактический индекс, главные ошибки и карта выстрелов (зелёный, жёлтый, красный).</p>
+<pre><code>mv.forEach((m,k)=&gt;{
+  const w=G.weights(b);                  // веса в тот момент партии
+  let mx=0; w.forEach((v,i)=&gt;{ if(!b.shots[i]&amp;&amp;v&gt;mx) mx=v });
+  rows.push({ k:k+1, i:m.i, q:w[m.i]/mx });   // q=1 — лучший возможный ход
+  G.shoot(b,m.i);                        // повторяем партию дальше
+});
+// q &gt;= .6 зелёный · q &gt;= .3 жёлтый · иначе красный</code></pre>
+
+  <h3>4. Защита от читерства</h3>
+  <p>Онлайн через Socket.io. Перед боем игрок отправляет только SHA-256 хеш расстановки с солью, в конце раскрывает флот, и соперник сверяет хеш. Изменить расстановку по ходу партии не получится.</p>
+<pre><code>// перед боем: отправляем только хеш
+S.hash = await sha(JSON.stringify(S.pl.ships) + S.salt);
+socket.emit("sb_ready", { h: S.hash });
+
+// в конце партии: соперник раскрыл флот и соль — проверяем
+S.ver = (await sha(JSON.stringify(m.ships) + m.salt)) == S.oppHash ? 1 : 0;</code></pre>
+
+  <h3>Структура</h3>
+  <ul>
+   <li><code>server.js</code>: комнаты на 2 игрока, сервер не хранит чужие расстановки и только пересылает ходы.</li>
+   <li><code>public/app.js</code>: логика <code>G</code> отдельно от отображения, страницы, перетаскивание (Pointer Events), онлайн.</li>
+   <li>localStorage: партия, статистика, монеты, скины.</li>
+  </ul>
+  <button data-a="closeabout">Закрыть</button>
+ </div>
+</div>
+<div id="toast"></div>
+</body>
+</html>
